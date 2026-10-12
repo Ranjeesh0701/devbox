@@ -1,3 +1,4 @@
+use std::fs;
 use std::io;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
@@ -5,14 +6,23 @@ use std::thread;
 
 use devbox::process::supervisor::ProcessSupervisor;
 use devbox::protocol::{Request, Response, read_message, write_message};
+use devbox::storage::ensure_storage_directory;
 
 fn main() -> io::Result<()> {
     let supervisor = Arc::new(Mutex::new(ProcessSupervisor::new()));
 
     let path = "/tmp/devbox.sock";
 
-    if std::path::Path::new(path).exists() {
-        std::fs::remove_file(path)?;
+    let storage_directory = ensure_storage_directory().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Failed to create directory: {}", e),
+        )
+    })?;
+    let temp_file = storage_directory.join(devbox::storage::SESSIONS_TMP);
+
+    if temp_file.exists() {
+        fs::remove_file(&temp_file)?;
     }
 
     let listener = UnixListener::bind(path)?;
@@ -40,40 +50,36 @@ fn handle_client(
     let request: Request = read_message(&mut stream)?;
     println!("{request:?}");
 
-    let response: Response = {
-        let mut supervisor = supervisor
-            .lock()
-            .map_err(|_| io::Error::other("Supervisor lock poisoned"))?;
-
-        match request {
+    let response: Response = match supervisor.lock() {
+        Err(_) => Response::Error {
+            message: "Supervisor lock poisoned".to_string(),
+        },
+        Ok(mut supervisor) => match request {
             Request::Start {
                 name,
                 program,
                 args,
-            } => {
-                let session = supervisor
-                    .start(name, program, args)
-                    .map_err(|_| io::Error::other("Failed to run supervisor operation"))?;
-
-                Response::Start {
+            } => match supervisor.start(name, program, args) {
+                Ok(session) => Response::Start {
                     session: session.clone(),
-                }
-            }
-            Request::List => {
-                let sessions = supervisor
-                    .list()
-                    .map_err(|_| io::Error::other("Failed to run supervisor operation"))?;
-
-                Response::List { sessions: sessions }
-            }
-            Request::Stop { id } => {
-                supervisor
-                    .stop(&id)
-                    .map_err(|_| io::Error::other("Failed to run supervisor operation"))?;
-
-                Response::Stop
-            }
-        }
+                },
+                Err(e) => Response::Error {
+                    message: format!("Failed to start: {e}"),
+                },
+            },
+            Request::List => match supervisor.list() {
+                Ok(sessions) => Response::List { sessions },
+                Err(e) => Response::Error {
+                    message: format!("Failed to list: {e}"),
+                },
+            },
+            Request::Stop { id } => match supervisor.stop(&id) {
+                Ok(()) => Response::Stop,
+                Err(e) => Response::Error {
+                    message: format!("Failed to stop: {e}"),
+                },
+            },
+        },
     };
 
     write_message(&mut stream, &response)?;

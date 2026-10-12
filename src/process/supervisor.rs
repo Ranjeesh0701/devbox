@@ -34,8 +34,14 @@ impl ProcessSupervisor {
         let mut active_sessions = Vec::new();
 
         for process in &mut self.processes {
-            if is_same_process(&process.session).map_err(DevboxError::ProcessCheck)? {
-                active_sessions.push(process.session.clone());
+            match is_same_process(&process.session) {
+                Ok(true) => {
+                    active_sessions.push(process.session.clone());
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    eprintln!("Failed to check process: {error}")
+                }
             }
         }
 

@@ -1,10 +1,9 @@
 use std::env;
-use std::fs;
+use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
 use devbox::error::DevboxError;
-use devbox::process::supervisor::ProcessSupervisor;
-use devbox::storage::ensure_storage_directory;
+use devbox::protocol::{Request, Response, read_message, write_message};
 
 fn main() -> ExitCode {
     match run() {
@@ -18,16 +17,8 @@ fn main() -> ExitCode {
 
 fn run() -> Result<u8, DevboxError> {
     let mut args = env::args();
-    let mut supervisor = ProcessSupervisor::new();
 
     args.next();
-
-    let storage_directory = ensure_storage_directory()?;
-    let temp_file = storage_directory.join(devbox::storage::SESSIONS_TMP);
-
-    if temp_file.exists() {
-        fs::remove_file(&temp_file).map_err(DevboxError::FileOperation)?;
-    }
 
     let action = match args.next() {
         Some(a) => a,
@@ -44,6 +35,8 @@ fn run() -> Result<u8, DevboxError> {
             action
         )));
     }
+
+    let mut stream = UnixStream::connect("/tmp/devbox.sock").map_err(DevboxError::FileOperation)?;
 
     if action == "start" {
         let name = match args.next() {
@@ -63,20 +56,41 @@ fn run() -> Result<u8, DevboxError> {
             }
         };
         let args: Vec<String> = args.collect();
+        let request = Request::Start {
+            name,
+            program,
+            args,
+        };
 
-        supervisor.start(name, program, args)?;
-    } else if action == "list" {
-        let sessions = supervisor.list()?;
+        write_message(&mut stream, &request).map_err(DevboxError::Ipc)?;
 
-        if sessions.is_empty() {
-            println!("No active sessions found.");
-        } else {
-            for session in sessions {
-                println!(
-                    "{}: {} (PID: {})\nCommand: {}",
-                    session.id, session.name, session.pid, session.command
-                );
+        let response: Response = read_message(&mut stream).map_err(DevboxError::Ipc)?;
+
+        match response {
+            Response::Start { session } => {
+                println!("{session:?}");
             }
+            _ => return Err(DevboxError::InvalidResponse),
+        }
+    } else if action == "list" {
+        let request = Request::List {};
+        write_message(&mut stream, &request).map_err(DevboxError::Ipc)?;
+        let response: Response = read_message(&mut stream).map_err(DevboxError::Ipc)?;
+
+        match response {
+            Response::List { sessions } => {
+                if sessions.is_empty() {
+                    println!("No active sessions found.");
+                } else {
+                    for session in sessions {
+                        println!(
+                            "{}: {} (PID: {})\nCommand: {}",
+                            session.id, session.name, session.pid, session.command
+                        );
+                    }
+                }
+            }
+            _ => return Err(DevboxError::InvalidResponse),
         }
     } else if action == "stop" {
         let session_id = match args.next() {
@@ -88,7 +102,15 @@ fn run() -> Result<u8, DevboxError> {
             }
         };
 
-        supervisor.stop(&session_id)?;
+        let request = Request::Stop { id: session_id };
+        write_message(&mut stream, &request).map_err(DevboxError::Ipc)?;
+
+        let response: Response = read_message(&mut stream).map_err(DevboxError::Ipc)?;
+
+        match response {
+            Response::Stop => {}
+            _ => return Err(DevboxError::InvalidResponse),
+        }
     }
 
     Ok(0)

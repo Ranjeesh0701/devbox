@@ -7,6 +7,8 @@ pub enum DevboxError {
     ProcessNotFound(std::io::Error),
     FileOperation(std::io::Error),
     ProcessCheck(std::io::Error),
+    Ipc(std::io::Error),
+    InvalidResponse,
     Json(serde_json::Error),
     StorageDirectoryUnavailable,
     ExitCodeUnavailable,
@@ -34,8 +36,14 @@ impl fmt::Display for DevboxError {
             DevboxError::FileOperation(error) => {
                 write!(f, "File operation failed: {error}")
             }
+            DevboxError::Ipc(error) => {
+                write!(f, "IPC operation failed: {error}")
+            }
             DevboxError::Json(error) => {
                 write!(f, "JSON operation failed: {error}")
+            }
+            DevboxError::InvalidResponse => {
+                write!(f, "Invalid response received")
             }
             DevboxError::ProcessNotFound(error) => {
                 write!(f, "Process not found: {error}")
