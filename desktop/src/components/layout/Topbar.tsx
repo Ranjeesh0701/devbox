@@ -8,7 +8,6 @@ const labels: Record<NavItem, string> = {
 };
 
 export function Topbar({ page }: { page: NavItem }) {
-  const theme = document.documentElement.dataset.theme ?? "dark";
   return (
     <header className="topbar">
       <div className="breadcrumbs">
@@ -21,11 +20,6 @@ export function Topbar({ page }: { page: NavItem }) {
           <Icon name="command" size={13} />
           <span>K</span>
         </div>
-        <span className="topbar-divider" />
-        <span className="topbar-theme-icon" aria-hidden="true">
-          <Icon name={theme === "dark" ? "moon" : "sun"} />
-        </span>
-        <div className="user-avatar">D</div>
       </div>
     </header>
   );

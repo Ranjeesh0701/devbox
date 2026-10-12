@@ -57,6 +57,23 @@ fn start_session(
     }
 }
 
+#[tauri::command]
+fn stop_session(id: String) -> Result<(), String> {
+    let mut stream = connect_to_daemon()?;
+
+    write_message(&mut stream, &Request::Stop { id })
+        .map_err(|error| format!("Failed to send stop request: {error}"))?;
+
+    let response: Response = read_message(&mut stream)
+        .map_err(|error| format!("Failed to read daemon response: {error}"))?;
+
+    match response {
+        Response::Stop => Ok(()),
+        Response::Error { message } => Err(message),
+        other => Err(format!("Unexpected daemon response: {other:?}")),
+    }
+}
+
 fn connect_to_daemon() -> Result<UnixStream, String> {
     UnixStream::connect(DEVBOX_SOCKET).map_err(|error| {
         format!("Could not connect to Devbox daemon at {DEVBOX_SOCKET}. Is it running? {error}")
@@ -67,7 +84,11 @@ fn connect_to_daemon() -> Result<UnixStream, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![list_sessions, start_session])
+        .invoke_handler(tauri::generate_handler![
+            list_sessions,
+            start_session,
+            stop_session
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
 }

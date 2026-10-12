@@ -1,13 +1,39 @@
 import { Icon } from "../../../components/ui/Icon";
 import { formatStarted } from "../utils/formatStarted";
 import type { ProcessSession } from "../types";
+import { useState } from "react";
 
-type Props = { sessions: ProcessSession[] };
+type Props = {
+  sessions: ProcessSession[];
+  onStop: (id: string) => Promise<void>;
+};
 
-export function SessionTable({ sessions }: Props) {
+export function SessionTable({ sessions, onStop }: Props) {
   if (sessions.length === 0) return null;
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
+
+  async function handleStop(id: string) {
+    setStoppingId(id);
+    setStopError(null);
+
+    try {
+      await onStop(id);
+    } catch (cause) {
+      setStopError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setStoppingId(null);
+    }
+  }
+
   return (
     <div className="session-table-wrap">
+      {stopError && (
+        <p role="alert" className="error-message">
+          {stopError}
+        </p>
+      )}
+
       <table className="session-table">
         <thead>
           <tr>
@@ -49,16 +75,32 @@ export function SessionTable({ sessions }: Props) {
                 </span>
               </td>
               <td>
-                <button
-                  className="row-action"
-                  aria-label={`Copy session ID for ${session.name}`}
-                  onClick={() =>
-                    void navigator.clipboard?.writeText(session.id)
-                  }
-                  title="Copy session ID"
-                >
-                  <Icon name="more" size={18} />
-                </button>
+                <div className="row-actions">
+                  <button
+                    className="row-action"
+                    aria-label={`Copy session ID for ${session.name}`}
+                    onClick={() =>
+                      void navigator.clipboard?.writeText(session.id)
+                    }
+                    title="Copy session ID"
+                  >
+                    <Icon name="copy" size={16} />
+                  </button>
+
+                  <button
+                    className="row-action"
+                    aria-label={`Stop session ${session.name}`}
+                    onClick={() => void handleStop(session.id)}
+                    disabled={stoppingId === session.id}
+                    title="Stop session"
+                  >
+                    {stoppingId === session.id ? (
+                      <Icon name="loader" size={16} />
+                    ) : (
+                      <Icon name="square" size={16} />
+                    )}
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

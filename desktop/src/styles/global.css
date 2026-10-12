@@ -647,6 +647,12 @@ kbd {
 .started-cell svg {
   color: var(--text-muted);
 }
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .row-action {
   display: inline-grid;
   place-items: center;
@@ -662,6 +668,10 @@ kbd {
   border-color: var(--border);
   background: var(--surface-raised);
   color: var(--text);
+}
+.row-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .table-footer {
   display: flex;

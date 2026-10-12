@@ -36,9 +36,25 @@ export function useSessions() {
     [refresh],
   );
 
+  const stopSession = useCallback(
+    async (id: string) => {
+      await api.stopSession(id);
+      await refresh();
+    },
+    [refresh],
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  return { sessions, error, loading, lastUpdated, refresh, startSession };
+  return {
+    sessions,
+    error,
+    loading,
+    lastUpdated,
+    refresh,
+    startSession,
+    stopSession,
+  };
 }

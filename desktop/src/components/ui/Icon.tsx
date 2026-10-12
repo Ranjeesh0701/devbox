@@ -15,7 +15,10 @@ type IconName =
   | "alert"
   | "sun"
   | "moon"
-  | "check";
+  | "check"
+  | "copy"
+  | "square"
+  | "loader";
 
 const paths: Record<IconName, ReactNode> = {
   grid: (
@@ -93,6 +96,20 @@ const paths: Record<IconName, ReactNode> = {
   ),
   moon: <path d="M20.8 14.2A8.5 8.5 0 0 1 9.8 3.2 8.6 8.6 0 1 0 20.8 14.2Z" />,
   check: <path d="m5 12 4 4L19 6" />,
+  copy: (
+    <>
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+    </>
+  ),
+  square: <rect x="6" y="6" width="12" height="12" rx="2" />,
+  loader: (
+    <>
+      <path d="M12 2v4" />
+      <path d="m16.2 7.8 2.8-2.8" />
+      <path d="M18 12h4" />
+    </>
+  ),
 };
 
 type Props = SVGProps<SVGSVGElement> & { name: IconName; size?: number };

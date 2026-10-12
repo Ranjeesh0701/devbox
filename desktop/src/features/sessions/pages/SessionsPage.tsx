@@ -9,8 +9,15 @@ import { useSessions } from "../hooks/useSessions";
 import type { NewSessionInput } from "../types";
 
 export function SessionsPage() {
-  const { sessions, error, loading, lastUpdated, refresh, startSession } =
-    useSessions();
+  const {
+    sessions,
+    stopSession,
+    error,
+    loading,
+    lastUpdated,
+    refresh,
+    startSession,
+  } = useSessions();
   const [search, setSearch] = useState("");
   const [showNewSession, setShowNewSession] = useState(false);
 
@@ -105,7 +112,7 @@ export function SessionsPage() {
         ) : filteredSessions.length === 0 ? (
           <SessionEmptyState kind={search ? "no-results" : "empty"} />
         ) : (
-          <SessionTable sessions={filteredSessions} />
+          <SessionTable sessions={filteredSessions} onStop={stopSession} />
         )}
       </section>
 
