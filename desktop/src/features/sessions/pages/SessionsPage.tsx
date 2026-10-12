@@ -5,21 +5,25 @@ import { NewSessionDialog } from "../components/NewSessionDialog";
 import { SessionEmptyState } from "../components/SessionEmptyState";
 import { SessionStats } from "../components/SessionStats";
 import { SessionTable } from "../components/SessionTable";
+import { LogViewer } from "../components/LogViewer";
 import { useSessions } from "../hooks/useSessions";
-import type { NewSessionInput } from "../types";
+import type { NewSessionInput, ProcessSession } from "../types";
 
 export function SessionsPage() {
   const {
     sessions,
-    stopSession,
     error,
     loading,
     lastUpdated,
     refresh,
     startSession,
+    stopSession,
   } = useSessions();
   const [search, setSearch] = useState("");
   const [showNewSession, setShowNewSession] = useState(false);
+  const [viewingSession, setViewingSession] = useState<ProcessSession | null>(
+    null,
+  );
 
   const filteredSessions = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -112,7 +116,11 @@ export function SessionsPage() {
         ) : filteredSessions.length === 0 ? (
           <SessionEmptyState kind={search ? "no-results" : "empty"} />
         ) : (
-          <SessionTable sessions={filteredSessions} onStop={stopSession} />
+          <SessionTable
+            sessions={filteredSessions}
+            onStop={stopSession}
+            onViewLogs={setViewingSession}
+          />
         )}
       </section>
 
@@ -128,6 +136,12 @@ export function SessionsPage() {
         <NewSessionDialog
           onClose={() => setShowNewSession(false)}
           onSubmit={handleStartSession}
+        />
+      )}
+      {viewingSession && (
+        <LogViewer
+          session={viewingSession}
+          onClose={() => setViewingSession(null)}
         />
       )}
     </div>

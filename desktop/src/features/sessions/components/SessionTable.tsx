@@ -1,22 +1,21 @@
+import { useState } from "react";
 import { Icon } from "../../../components/ui/Icon";
 import { formatStarted } from "../utils/formatStarted";
 import type { ProcessSession } from "../types";
-import { useState } from "react";
 
 type Props = {
   sessions: ProcessSession[];
   onStop: (id: string) => Promise<void>;
+  onViewLogs: (session: ProcessSession) => void;
 };
 
-export function SessionTable({ sessions, onStop }: Props) {
-  if (sessions.length === 0) return null;
+export function SessionTable({ sessions, onStop, onViewLogs }: Props) {
   const [stoppingId, setStoppingId] = useState<string | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
 
   async function handleStop(id: string) {
     setStoppingId(id);
     setStopError(null);
-
     try {
       await onStop(id);
     } catch (cause) {
@@ -26,14 +25,10 @@ export function SessionTable({ sessions, onStop }: Props) {
     }
   }
 
+  if (sessions.length === 0) return null;
+
   return (
     <div className="session-table-wrap">
-      {stopError && (
-        <p role="alert" className="error-message">
-          {stopError}
-        </p>
-      )}
-
       <table className="session-table">
         <thead>
           <tr>
@@ -78,6 +73,14 @@ export function SessionTable({ sessions, onStop }: Props) {
                 <div className="row-actions">
                   <button
                     className="row-action"
+                    aria-label={`View logs for ${session.name}`}
+                    onClick={() => onViewLogs(session)}
+                    title="View logs"
+                  >
+                    <Icon name="terminal" size={16} />
+                  </button>
+                  <button
+                    className="row-action"
                     aria-label={`Copy session ID for ${session.name}`}
                     onClick={() =>
                       void navigator.clipboard?.writeText(session.id)
@@ -86,7 +89,6 @@ export function SessionTable({ sessions, onStop }: Props) {
                   >
                     <Icon name="copy" size={16} />
                   </button>
-
                   <button
                     className="row-action"
                     aria-label={`Stop session ${session.name}`}
@@ -94,11 +96,10 @@ export function SessionTable({ sessions, onStop }: Props) {
                     disabled={stoppingId === session.id}
                     title="Stop session"
                   >
-                    {stoppingId === session.id ? (
-                      <Icon name="loader" size={16} />
-                    ) : (
-                      <Icon name="square" size={16} />
-                    )}
+                    <Icon
+                      name={stoppingId === session.id ? "loader" : "square"}
+                      size={16}
+                    />
                   </button>
                 </div>
               </td>
@@ -106,6 +107,11 @@ export function SessionTable({ sessions, onStop }: Props) {
           ))}
         </tbody>
       </table>
+      {stopError && (
+        <p className="error-message" role="alert">
+          {stopError}
+        </p>
+      )}
       <div className="table-footer">
         <span>
           Showing <strong>{sessions.length}</strong> session
