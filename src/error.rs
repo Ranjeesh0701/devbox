@@ -7,6 +7,7 @@ pub enum DevboxError {
     ProcessNotFound(std::io::Error),
     FileOperation(std::io::Error),
     ProcessCheck(std::io::Error),
+    DaemonError(String),
     Ipc(std::io::Error),
     InvalidResponse,
     Json(serde_json::Error),
@@ -50,6 +51,9 @@ impl fmt::Display for DevboxError {
             }
             DevboxError::StorageDirectoryUnavailable => {
                 write!(f, "Could not determine the application data directory")
+            }
+            DevboxError::DaemonError(message) => {
+                write!(f, "Daemon error: {message}")
             }
         }
     }
