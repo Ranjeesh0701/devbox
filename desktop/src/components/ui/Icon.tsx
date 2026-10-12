@@ -18,7 +18,8 @@ type IconName =
   | "check"
   | "copy"
   | "square"
-  | "loader";
+  | "loader"
+  | "close";
 
 const paths: Record<IconName, ReactNode> = {
   grid: (
@@ -108,6 +109,12 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M12 2v4" />
       <path d="m16.2 7.8 2.8-2.8" />
       <path d="M18 12h4" />
+    </>
+  ),
+  close: (
+    <>
+      <path d="m18 6-12 12" />
+      <path d="m6 6 12 12" />
     </>
   ),
 };

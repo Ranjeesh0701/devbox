@@ -149,24 +149,34 @@ export function ActivityPage() {
                   {selectedId === session.id && (
                     <div className="activity-log-panel">
                       <div className="activity-log-heading">
-                        <strong>Session logs</strong>
+                        <div className="activity-log-label">
+                          <Icon name="terminal" size={14} />
+                          <span>Output</span>
+                        </div>
+
                         <button
                           className="row-action"
                           onClick={() => setSelectedId(null)}
                           aria-label="Close logs"
                           title="Close logs"
                         >
-                          ×
+                          <Icon name="close" size={13} />
                         </button>
                       </div>
 
-                      {logsLoading ? (
-                        <p>Loading logs…</p>
-                      ) : logsError ? (
-                        <p className="activity-error">{logsError}</p>
-                      ) : (
-                        <pre>{logs || "No logs available."}</pre>
-                      )}
+                      <div className="activity-log-content">
+                        {logsLoading ? (
+                          <p className="activity-log-state">Loading output…</p>
+                        ) : logsError ? (
+                          <p className="activity-error">{logsError}</p>
+                        ) : logs ? (
+                          <pre>{logs}</pre>
+                        ) : (
+                          <p className="activity-log-state">
+                            No output captured for this session.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
