@@ -120,7 +120,7 @@ fn run() -> Result<u8, DevboxError> {
         }
     };
 
-    let mut stream = connect_to_daemon_with_retry(5, 100)?;
+    let mut stream = connect_to_daemon_with_retry(50, 100)?;
 
     write_message(&mut stream, &request).map_err(DevboxError::Ipc)?;
 
