@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
