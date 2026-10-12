@@ -1,19 +1,21 @@
-import { useEffect, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { StatusDot } from "../ui/StatusDot";
 import { NAV_ITEMS, type NavItem } from "./navigation";
+import type { Theme } from "../../lib/theme";
 
-type Props = { activePage: NavItem; onNavigate: (page: NavItem) => void };
+type Props = {
+  activePage: NavItem;
+  onNavigate: (page: NavItem) => void;
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
+};
 
-export function Sidebar({ activePage, onNavigate }: Props) {
-  const [theme, setTheme] = useState<"dark" | "light">(() =>
-    document.documentElement.dataset.theme === "light" ? "light" : "dark",
-  );
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
+export function Sidebar({
+  activePage,
+  onNavigate,
+  theme,
+  onThemeChange,
+}: Props) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -64,7 +66,7 @@ export function Sidebar({ activePage, onNavigate }: Props) {
           </div>
           <button
             className="icon-button theme-button"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")}
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
           >
             <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />

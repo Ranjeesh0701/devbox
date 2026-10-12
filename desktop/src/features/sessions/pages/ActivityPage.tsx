@@ -25,14 +25,6 @@ export function ActivityPage() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
 
-  const counts = useMemo(() => {
-    return {
-      running: sessions.filter((s) => getOutcome(s) === "running").length,
-      completed: sessions.filter((s) => getOutcome(s) === "completed").length,
-      failed: sessions.filter((s) => getOutcome(s) === "failed").length,
-    };
-  }, [sessions]);
-
   const filteredSessions = useMemo(() => {
     return [...sessions]
       .filter((session) => {
@@ -84,34 +76,6 @@ export function ActivityPage() {
         <button className="secondary-button" onClick={() => void refresh()}>
           <Icon name="refresh" size={15} />
           Refresh
-        </button>
-      </div>
-
-      <div className="activity-stats">
-        <button
-          className={`activity-stat ${filter === "running" ? "is-selected" : ""}`}
-          onClick={() => setFilter(filter === "running" ? "all" : "running")}
-        >
-          <span>Running</span>
-          <strong>{counts.running}</strong>
-        </button>
-
-        <button
-          className={`activity-stat ${filter === "completed" ? "is-selected" : ""}`}
-          onClick={() =>
-            setFilter(filter === "completed" ? "all" : "completed")
-          }
-        >
-          <span>Completed</span>
-          <strong>{counts.completed}</strong>
-        </button>
-
-        <button
-          className={`activity-stat ${filter === "failed" ? "is-selected" : ""}`}
-          onClick={() => setFilter(filter === "failed" ? "all" : "failed")}
-        >
-          <span>Failed</span>
-          <strong>{counts.failed}</strong>
         </button>
       </div>
 
