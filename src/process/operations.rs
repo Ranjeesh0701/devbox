@@ -2,7 +2,7 @@ use std::process::{Child, Command, Stdio};
 use std::{fs, io, mem};
 use uuid::Uuid;
 
-use super::session::ProcessSession;
+use super::session::{ProcessSession, ProcessStatus};
 use crate::error::DevboxError;
 use crate::storage::get_log_file;
 
@@ -38,6 +38,8 @@ pub fn start_process(
         command: program,
         start_time_seconds: start_time_seconds,
         start_time_useconds: start_time_useconds,
+        status: ProcessStatus::Running,
+        exit_code: None,
     };
 
     println!("Started {} with PID {}", session.name, session.pid);

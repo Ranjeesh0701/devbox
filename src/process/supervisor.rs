@@ -2,7 +2,7 @@ use std::io;
 use std::process::Child;
 
 use super::operations::{is_same_process, start_process, stop_process};
-use super::session::ProcessSession;
+use super::session::{ProcessSession, ProcessStatus};
 use crate::error::DevboxError;
 use crate::storage::{get_log_file, get_sessions, save_sessions};
 
@@ -39,31 +39,48 @@ impl ProcessSupervisor {
     }
 
     pub fn list(&mut self) -> Result<Vec<ProcessSession>, DevboxError> {
-        let mut active_sessions = Vec::new();
-
         for process in &mut self.processes {
-            match is_same_process(&process.session) {
-                Ok(true) => {
-                    active_sessions.push(process.session.clone());
+            let child_result = match process.child.as_mut() {
+                Some(child) => Some(child.try_wait()),
+                None => None,
+            };
+
+            match child_result {
+                Some(Ok(Some(exit_status))) => {
+                    process.session.status = ProcessStatus::Exited;
+                    process.session.exit_code = exit_status.code();
+                    process.child = None;
                 }
-                Ok(false) => {}
-                Err(error) => {
-                    eprintln!("Failed to check process: {error}")
+                Some(Ok(None)) => {
+                    process.session.status = ProcessStatus::Running;
                 }
+                Some(Err(error)) => {
+                    eprintln!(
+                        "Failed to check child process {}: {error}",
+                        process.session.pid
+                    );
+                }
+                None => match is_same_process(&process.session) {
+                    Ok(true) => {
+                        process.session.status = ProcessStatus::Running;
+                    }
+                    Ok(false) => {
+                        process.session.status = ProcessStatus::Exited;
+                    }
+                    Err(error) => {
+                        eprintln!("Failed to check process {}: {error}", process.session.pid);
+                    }
+                },
             }
         }
 
-        let active_ids: Vec<String> = active_sessions
-            .iter()
-            .map(|session| session.id.clone())
-            .collect();
-
-        self.processes
-            .retain(|process| active_ids.contains(&process.session.id));
-
         self.save_sessions()?;
 
-        Ok(active_sessions)
+        Ok(self
+            .processes
+            .iter()
+            .map(|process| process.session.clone())
+            .collect())
     }
 
     pub fn start(
