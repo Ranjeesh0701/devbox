@@ -2,14 +2,17 @@ use std::fs;
 use std::io;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use devbox::process::supervisor::ProcessSupervisor;
 use devbox::protocol::{Request, Response, read_message, write_message};
 use devbox::storage::ensure_storage_directory;
 
 fn main() -> io::Result<()> {
+    let shutdown = Arc::new(AtomicBool::new(false));
     let supervisor = Arc::new(Mutex::new(ProcessSupervisor::new().map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
@@ -45,13 +48,29 @@ fn main() -> io::Result<()> {
     }
 
     let listener = UnixListener::bind(path)?;
+    listener.set_nonblocking(true)?;
 
-    for connection in listener.incoming() {
-        match connection {
-            Ok(stream) => {
+    loop {
+        if shutdown.load(Ordering::SeqCst) {
+            println!("Daemon shutting down");
+            break;
+        }
+
+        match listener.accept() {
+            Ok((stream, _address)) => {
                 let supervisor = Arc::clone(&supervisor);
+                let shutdown_signal = Arc::clone(&shutdown);
+
                 println!("Received a CLI connection");
-                thread::spawn(move || handle_client(stream, supervisor));
+
+                thread::spawn(move || {
+                    if let Err(error) = handle_client(stream, supervisor, shutdown_signal) {
+                        eprintln!("Failed to handle client: {error}");
+                    }
+                });
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(50));
             }
             Err(error) => {
                 eprintln!("Failed to accept connection: {error}")
@@ -65,8 +84,11 @@ fn main() -> io::Result<()> {
 fn handle_client(
     mut stream: UnixStream,
     supervisor: Arc<Mutex<ProcessSupervisor>>,
+    shutdown: Arc<AtomicBool>,
 ) -> io::Result<()> {
     let request: Request = read_message(&mut stream)?;
+    let is_shutdown = matches!(&request, Request::Shutdown);
+
     println!("{request:?}");
 
     let response: Response = match supervisor.lock() {
@@ -98,10 +120,18 @@ fn handle_client(
                     message: format!("Failed to stop: {e}"),
                 },
             },
+            Request::Shutdown => {
+                println!("Shutting down daemon");
+                Response::Shutdown
+            }
         },
     };
 
     write_message(&mut stream, &response)?;
+
+    if is_shutdown {
+        shutdown.store(true, Ordering::SeqCst);
+    }
 
     Ok(())
 }

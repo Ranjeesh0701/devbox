@@ -16,6 +16,7 @@ pub enum Request {
     Stop {
         id: String,
     },
+    Shutdown,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,6 +24,7 @@ pub enum Response {
     Start { session: ProcessSession },
     List { sessions: Vec<ProcessSession> },
     Stop,
+    Shutdown,
     Error { message: String },
 }
 

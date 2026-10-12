@@ -36,6 +36,7 @@ fn run() -> Result<u8, DevboxError> {
         println!("  start <name> <program> [args...] - Start a process.");
         println!("  list                              - List active sessions.");
         println!("  stop <session_id>                 - Stop a process.");
+        println!("  shutdown                          - Shutdown the daemon.");
         return Ok(0);
     }
 
@@ -83,9 +84,18 @@ fn run() -> Result<u8, DevboxError> {
 
             Request::Stop { id }
         }
+        "shutdown" => {
+            if args.next().is_some() {
+                return Err(DevboxError::InvalidArguments(
+                    "No arguments expected for 'shutdown'. Usage: shutdown".to_string(),
+                ));
+            }
+
+            Request::Shutdown
+        }
         _ => {
             return Err(DevboxError::InvalidArguments(format!(
-                "Invalid action: {action}. Supported actions: start, list, stop."
+                "Invalid action: {action}. Supported actions: start, list, stop shutdown."
             )));
         }
     };
@@ -128,6 +138,13 @@ fn run() -> Result<u8, DevboxError> {
             }
             println!("Session stopped successfully.");
         }
+        Response::Shutdown => {
+            if !matches!(request, Request::Shutdown) {
+                return Err(DevboxError::InvalidResponse);
+            }
+
+            println!("Daemon shutdown successfully.");
+        }
         Response::Error { message } => {
             return Err(DevboxError::DaemonError(message));
         }
@@ -140,7 +157,6 @@ fn get_daemon_path() -> io::Result<PathBuf> {
     let mut path = env::current_exe()?;
     path.pop();
     path.push("daemon");
-    println!("{path:?}");
 
     Ok(path)
 }
