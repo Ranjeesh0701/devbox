@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -23,6 +24,19 @@ fn main() -> io::Result<()> {
 
     if temp_file.exists() {
         fs::remove_file(&temp_file)?;
+    }
+
+    if Path::new(path).exists() {
+        match UnixStream::connect(path) {
+            Ok(_) => {
+                println!("Deamon already running");
+                return Ok(());
+            }
+            Err(error) => {
+                eprintln!("Failed to connect: {error}");
+                fs::remove_file(path)?;
+            }
+        }
     }
 
     let listener = UnixListener::bind(path)?;
