@@ -3,16 +3,16 @@ use std::os::unix::net::UnixStream;
 use devbox_core::process::session::ProcessSession;
 use devbox_core::protocol::{Request, Response, read_message, write_message};
 
+const DEVBOX_SOCKET: &str = "/tmp/devbox.sock";
+
 #[tauri::command]
 fn list_sessions() -> Result<Vec<ProcessSession>, String> {
-    let mut stream = UnixStream::connect("/tmp/devbox.sock")
-        .map_err(|e| format!("Could not connect to Devbox daemon. Is it running? {e}"))?;
-
+    let mut stream = connect_to_daemon()?;
     write_message(&mut stream, &Request::List)
-        .map_err(|e| format!("Failed to send request: {e}"))?;
+        .map_err(|error| format!("Failed to send list request: {error}"))?;
 
-    let response: Response =
-        read_message(&mut stream).map_err(|e| format!("Failed to read daemon response: {e}"))?;
+    let response: Response = read_message(&mut stream)
+        .map_err(|error| format!("Failed to read daemon response: {error}"))?;
 
     match response {
         Response::List { sessions } => Ok(sessions),
@@ -21,11 +21,53 @@ fn list_sessions() -> Result<Vec<ProcessSession>, String> {
     }
 }
 
+#[tauri::command]
+fn start_session(
+    name: String,
+    program: String,
+    args: Vec<String>,
+) -> Result<ProcessSession, String> {
+    let name = name.trim();
+    let program = program.trim();
+
+    if name.is_empty() {
+        return Err("Session name cannot be empty.".to_string());
+    }
+    if program.is_empty() {
+        return Err("Executable cannot be empty.".to_string());
+    }
+
+    let mut stream = connect_to_daemon()?;
+    let request = Request::Start {
+        name: name.to_string(),
+        program: program.to_string(),
+        args,
+    };
+
+    write_message(&mut stream, &request)
+        .map_err(|error| format!("Failed to send start request: {error}"))?;
+
+    let response: Response = read_message(&mut stream)
+        .map_err(|error| format!("Failed to read daemon response: {error}"))?;
+
+    match response {
+        Response::Start { session } => Ok(session),
+        Response::Error { message } => Err(message),
+        other => Err(format!("Unexpected daemon response: {other:?}")),
+    }
+}
+
+fn connect_to_daemon() -> Result<UnixStream, String> {
+    UnixStream::connect(DEVBOX_SOCKET).map_err(|error| {
+        format!("Could not connect to Devbox daemon at {DEVBOX_SOCKET}. Is it running? {error}")
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![list_sessions])
+        .invoke_handler(tauri::generate_handler![list_sessions, start_session])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error while running Tauri application");
 }

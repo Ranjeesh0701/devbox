@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../lib/api";
 import type { ProcessSession } from "../types";
+import type { NewSessionInput } from "../types";
 
 export function useSessions() {
   const [sessions, setSessions] = useState<ProcessSession[]>([]);
@@ -16,13 +17,28 @@ export function useSessions() {
       setSessions(result);
       setLastUpdated(new Date());
     } catch (cause) {
-      setError(String(cause));
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  const startSession = useCallback(
+    async (input: NewSessionInput) => {
+      try {
+        await api.startSession(input);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        throw new Error(message);
+      }
+      await refresh();
+    },
+    [refresh],
+  );
 
-  return { sessions, error, loading, lastUpdated, refresh };
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { sessions, error, loading, lastUpdated, refresh, startSession };
 }
