@@ -1,3 +1,5 @@
+export type ProcessStatus = "running" | "exited";
+
 export type ProcessSession = {
   id: string;
   pid: number;
@@ -5,6 +7,8 @@ export type ProcessSession = {
   command: string;
   start_time_seconds: number;
   start_time_useconds: number;
+  status: ProcessStatus;
+  exit_code: number | null;
 };
 
 export type NewSessionInput = {

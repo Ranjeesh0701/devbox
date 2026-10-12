@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Icon } from "../../../components/ui/Icon";
 import { formatStarted } from "../utils/formatStarted";
 import type { ProcessSession } from "../types";
+import { ProcessStatusBadge } from "../../../components/ui/ProcessStatusBadge";
 
 type Props = {
   sessions: ProcessSession[];
@@ -36,6 +37,7 @@ export function SessionTable({ sessions, onStop, onViewLogs }: Props) {
             <th>COMMAND</th>
             <th>PID</th>
             <th>STARTED</th>
+            <th>STATUS</th>
             <th>
               <span className="sr-only">Actions</span>
             </th>
@@ -70,6 +72,9 @@ export function SessionTable({ sessions, onStop, onViewLogs }: Props) {
                 </span>
               </td>
               <td>
+                <ProcessStatusBadge session={session} />
+              </td>
+              <td>
                 <div className="row-actions">
                   <button
                     className="row-action"
@@ -89,18 +94,17 @@ export function SessionTable({ sessions, onStop, onViewLogs }: Props) {
                   >
                     <Icon name="copy" size={16} />
                   </button>
-                  <button
-                    className="row-action"
-                    aria-label={`Stop session ${session.name}`}
-                    onClick={() => void handleStop(session.id)}
-                    disabled={stoppingId === session.id}
-                    title="Stop session"
-                  >
-                    <Icon
-                      name={stoppingId === session.id ? "loader" : "square"}
-                      size={16}
-                    />
-                  </button>
+                  {session.status === "running" && (
+                    <button
+                      className="row-action"
+                      onClick={() => void handleStop(session.id)}
+                      title="Stop session"
+                      aria-label={`Stop ${session.name}`}
+                      disabled={stoppingId === session.id}
+                    >
+                      <Icon name="square" size={16} />
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
