@@ -16,6 +16,10 @@ pub enum Request {
     Stop {
         id: String,
     },
+    Logs {
+        id: String,
+        follow: bool,
+    },
     Shutdown,
 }
 
@@ -24,6 +28,9 @@ pub enum Response {
     Start { session: ProcessSession },
     List { sessions: Vec<ProcessSession> },
     Stop,
+    Logs { logs: String },
+    LogChunk { logs: String },
+    LogStreamEnd,
     Shutdown,
     Error { message: String },
 }

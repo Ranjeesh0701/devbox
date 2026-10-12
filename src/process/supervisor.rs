@@ -4,7 +4,7 @@ use std::process::Child;
 use super::operations::{is_same_process, start_process, stop_process};
 use super::session::ProcessSession;
 use crate::error::DevboxError;
-use crate::storage::{get_sessions, save_sessions};
+use crate::storage::{get_log_file, get_sessions, save_sessions};
 
 struct ManagedProcess {
     child: Option<Child>,
@@ -124,6 +124,17 @@ impl ProcessSupervisor {
         self.save_sessions()?;
 
         Ok(())
+    }
+
+    pub fn log_file(&self, id: &str) -> Result<std::path::PathBuf, DevboxError> {
+        self.find_process(id)
+            .map(|process| get_log_file(&process.session.id))
+            .ok_or_else(|| {
+                DevboxError::ProcessNotFound(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Session not found",
+                ))
+            })?
     }
 
     fn save_sessions(&self) -> Result<(), DevboxError> {

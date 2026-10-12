@@ -36,6 +36,7 @@ fn run() -> Result<u8, DevboxError> {
         println!("  start <name> <program> [args...] - Start a process.");
         println!("  list                              - List active sessions.");
         println!("  stop <session_id>                 - Stop a process.");
+        println!("  logs <session_id>                 - Show logs for a session.");
         println!("  shutdown                          - Shutdown the daemon.");
         return Ok(0);
     }
@@ -84,6 +85,25 @@ fn run() -> Result<u8, DevboxError> {
 
             Request::Stop { id }
         }
+        "logs" => {
+            let id = args.next().ok_or_else(|| {
+                DevboxError::InvalidArguments(
+                    "No session ID specified. Usage: logs <session_id>".to_string(),
+                )
+            })?;
+
+            let follow = match args.next().as_deref() {
+                None => false,
+                Some("--follow") => true,
+                Some(arg) => {
+                    return Err(DevboxError::InvalidArguments(format!(
+                        "Unexpected argument: {arg}. Usage: logs <session_id> [--follow]"
+                    )));
+                }
+            };
+
+            Request::Logs { id, follow }
+        }
         "shutdown" => {
             if args.next().is_some() {
                 return Err(DevboxError::InvalidArguments(
@@ -95,7 +115,7 @@ fn run() -> Result<u8, DevboxError> {
         }
         _ => {
             return Err(DevboxError::InvalidArguments(format!(
-                "Invalid action: {action}. Supported actions: start, list, stop shutdown."
+                "Invalid action: {action}. Supported actions: start, list, stop, logs, shutdown."
             )));
         }
     };
@@ -104,49 +124,76 @@ fn run() -> Result<u8, DevboxError> {
 
     write_message(&mut stream, &request).map_err(DevboxError::Ipc)?;
 
-    let response: Response = read_message(&mut stream).map_err(DevboxError::Ipc)?;
+    let mut response = read_message::<_, Response>(&mut stream).map_err(DevboxError::Ipc)?;
 
-    match response {
-        Response::Start { session } => {
-            if !matches!(request, Request::Start { .. }) {
-                return Err(DevboxError::InvalidResponse);
-            }
-            println!("{session:?}");
-        }
-        Response::List { sessions } => {
-            if !matches!(request, Request::List) {
-                return Err(DevboxError::InvalidResponse);
-            }
-
-            if sessions.is_empty() {
-                println!("No active sessions found.");
-            } else {
-                println!("{:<40} {:<20} {:<10} COMMAND", "ID", "NAME", "PID");
-                println!("{}", "-".repeat(90));
-
-                for session in sessions {
-                    println!(
-                        "{:<40} {:<20} {:<10} {}",
-                        session.id, session.name, session.pid, session.command
-                    );
+    loop {
+        match response {
+            Response::Start { session } => {
+                if !matches!(request, Request::Start { .. }) {
+                    return Err(DevboxError::InvalidResponse);
                 }
+                println!("{session:?}");
+                break;
             }
-        }
-        Response::Stop => {
-            if !matches!(request, Request::Stop { .. }) {
-                return Err(DevboxError::InvalidResponse);
-            }
-            println!("Session stopped successfully.");
-        }
-        Response::Shutdown => {
-            if !matches!(request, Request::Shutdown) {
-                return Err(DevboxError::InvalidResponse);
-            }
+            Response::List { sessions } => {
+                if !matches!(request, Request::List) {
+                    return Err(DevboxError::InvalidResponse);
+                }
 
-            println!("Daemon shutdown successfully.");
-        }
-        Response::Error { message } => {
-            return Err(DevboxError::DaemonError(message));
+                if sessions.is_empty() {
+                    println!("No active sessions found.");
+                } else {
+                    println!("{:<40} {:<20} {:<10} COMMAND", "ID", "NAME", "PID");
+                    println!("{}", "-".repeat(90));
+
+                    for session in sessions {
+                        println!(
+                            "{:<40} {:<20} {:<10} {}",
+                            session.id, session.name, session.pid, session.command
+                        );
+                    }
+                }
+                break;
+            }
+            Response::LogChunk { logs } => {
+                if !matches!(request, Request::Logs { .. }) {
+                    return Err(DevboxError::InvalidResponse);
+                }
+
+                print!("{logs}");
+                use std::io::Write;
+                std::io::stdout()
+                    .flush()
+                    .map_err(DevboxError::FileOperation)?;
+
+                response = read_message::<_, Response>(&mut stream).map_err(DevboxError::Ipc)?;
+            }
+            Response::LogStreamEnd => {
+                if !matches!(request, Request::Logs { .. }) {
+                    return Err(DevboxError::InvalidResponse);
+                }
+                break;
+            }
+            Response::Stop => {
+                if !matches!(request, Request::Stop { .. }) {
+                    return Err(DevboxError::InvalidResponse);
+                }
+                println!("Session stopped successfully.");
+                break;
+            }
+            Response::Shutdown => {
+                if !matches!(request, Request::Shutdown) {
+                    return Err(DevboxError::InvalidResponse);
+                }
+                println!("Daemon shutdown successfully.");
+                break;
+            }
+            Response::Logs { .. } => {
+                return Err(DevboxError::InvalidResponse);
+            }
+            Response::Error { message } => {
+                return Err(DevboxError::DaemonError(message));
+            }
         }
     }
 

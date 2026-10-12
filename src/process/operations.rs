@@ -1,17 +1,28 @@
-use std::process::{Child, Command};
-use std::{io, mem};
+use std::process::{Child, Command, Stdio};
+use std::{fs, io, mem};
 use uuid::Uuid;
 
 use super::session::ProcessSession;
 use crate::error::DevboxError;
+use crate::storage::get_log_file;
 
 pub fn start_process(
     name: String,
     program: String,
     args: Vec<String>,
 ) -> Result<(Child, ProcessSession), DevboxError> {
+    let id = Uuid::new_v4().to_string();
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(get_log_file(&id)?)
+        .map_err(DevboxError::FileOperation)?;
+    let stdout_file = file.try_clone().map_err(DevboxError::FileOperation)?;
+
     let child = Command::new(&program)
         .args(args)
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(file))
         .spawn()
         .map_err(DevboxError::ProcessLaunch)?;
 
@@ -21,7 +32,7 @@ pub fn start_process(
         Err(e) => return Err(DevboxError::ProcessCheck(e)),
     };
     let session = ProcessSession {
-        id: Uuid::new_v4().to_string(),
+        id: id,
         pid: pid,
         name: name,
         command: program,

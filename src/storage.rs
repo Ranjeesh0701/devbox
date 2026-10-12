@@ -17,12 +17,36 @@ pub fn get_storage_directory() -> Result<PathBuf, DevboxError> {
     Ok(path)
 }
 
+pub fn get_logs_directory() -> Result<PathBuf, DevboxError> {
+    let mut path = get_storage_directory()?;
+    path.push(format!("logs"));
+
+    Ok(path)
+}
+
 pub fn ensure_storage_directory() -> Result<PathBuf, DevboxError> {
     let path = get_storage_directory()?;
 
     if !path.exists() {
         fs::create_dir_all(&path).map_err(DevboxError::FileOperation)?;
     }
+
+    Ok(path)
+}
+
+pub fn ensure_logs_directory() -> Result<PathBuf, DevboxError> {
+    let path = get_logs_directory()?;
+
+    if !path.exists() {
+        fs::create_dir_all(&path).map_err(DevboxError::FileOperation)?;
+    }
+
+    Ok(path)
+}
+
+pub fn get_log_file(id: &str) -> Result<PathBuf, DevboxError> {
+    let mut path = ensure_logs_directory()?;
+    path.push(format!("{id}.log"));
 
     Ok(path)
 }

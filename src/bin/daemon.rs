@@ -1,5 +1,5 @@
 use std::fs;
-use std::io;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -78,6 +78,7 @@ fn main() -> io::Result<()> {
         }
     }
 
+    fs::remove_file(path)?;
     Ok(())
 }
 
@@ -87,6 +88,39 @@ fn handle_client(
     shutdown: Arc<AtomicBool>,
 ) -> io::Result<()> {
     let request: Request = read_message(&mut stream)?;
+
+    if let Request::Logs { id, follow } = &request {
+        let result = {
+            let supervisor = supervisor
+                .lock()
+                .map_err(|_| io::Error::other("Supervisor lock poisoned"))?;
+
+            supervisor.log_file(&id)
+        };
+
+        match result {
+            Ok(path) => {
+                if let Err(error) = logs(&mut stream, &path, *follow) {
+                    if error.kind() != io::ErrorKind::BrokenPipe
+                        && error.kind() != io::ErrorKind::ConnectionReset
+                    {
+                        eprintln!("Failed to stream logs: {error}");
+                    }
+                }
+            }
+            Err(error) => {
+                write_message(
+                    &mut stream,
+                    &Response::Error {
+                        message: format!("Failed to get logs: {error}"),
+                    },
+                )?;
+            }
+        }
+
+        return Ok(());
+    }
+
     let is_shutdown = matches!(&request, Request::Shutdown);
 
     println!("{request:?}");
@@ -120,6 +154,7 @@ fn handle_client(
                     message: format!("Failed to stop: {e}"),
                 },
             },
+            Request::Logs { .. } => unreachable!("Logs requests are handled above"),
             Request::Shutdown => {
                 println!("Shutting down daemon");
                 Response::Shutdown
@@ -134,4 +169,25 @@ fn handle_client(
     }
 
     Ok(())
+}
+
+fn logs(stream: &mut UnixStream, path: &Path, follow: bool) -> io::Result<()> {
+    let mut file = fs::File::open(path)?;
+    let mut buffer = [0u8; 4096];
+
+    loop {
+        let bytes_read = file.read(&mut buffer)?;
+
+        if bytes_read > 0 {
+            let logs = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
+
+            write_message(stream, &Response::LogChunk { logs })?;
+        } else if !follow {
+            break;
+        } else {
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    write_message(stream, &Response::LogStreamEnd)
 }
