@@ -10,13 +10,18 @@ use devbox::protocol::{Request, Response, read_message, write_message};
 use devbox::storage::ensure_storage_directory;
 
 fn main() -> io::Result<()> {
-    let supervisor = Arc::new(Mutex::new(ProcessSupervisor::new()));
+    let supervisor = Arc::new(Mutex::new(ProcessSupervisor::new().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to initialize supervisor: {}", e),
+        )
+    })?));
 
     let path = "/tmp/devbox.sock";
 
     let storage_directory = ensure_storage_directory().map_err(|e| {
         io::Error::new(
-            io::ErrorKind::NotFound,
+            io::ErrorKind::Other,
             format!("Failed to create directory: {}", e),
         )
     })?;

@@ -4,10 +4,10 @@ use std::process::Child;
 use super::operations::{is_same_process, start_process, stop_process};
 use super::session::ProcessSession;
 use crate::error::DevboxError;
-use crate::storage::save_sessions;
+use crate::storage::{get_sessions, save_sessions};
 
 struct ManagedProcess {
-    child: Child,
+    child: Option<Child>,
     session: ProcessSession,
 }
 
@@ -16,10 +16,18 @@ pub struct ProcessSupervisor {
 }
 
 impl ProcessSupervisor {
-    pub fn new() -> Self {
-        Self {
-            processes: Vec::new(),
-        }
+    pub fn new() -> Result<Self, DevboxError> {
+        let sessions = get_sessions()?;
+
+        let processes = sessions
+            .into_iter()
+            .map(|session| ManagedProcess {
+                child: None,
+                session,
+            })
+            .collect();
+
+        Ok(Self { processes })
     }
 
     fn find_process(&self, id: &str) -> Option<&ManagedProcess> {
@@ -66,7 +74,10 @@ impl ProcessSupervisor {
     ) -> Result<&ProcessSession, DevboxError> {
         let (child, session) = start_process(name, program, args)?;
         let session_id = session.id.clone();
-        self.processes.push(ManagedProcess { child, session });
+        self.processes.push(ManagedProcess {
+            child: Some(child),
+            session,
+        });
 
         if let Err(save_error) = self.save_sessions() {
             if let Err(stop_error) = self.stop(&session_id) {
