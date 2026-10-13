@@ -7,6 +7,7 @@ use std::process::{Command, ExitCode, Stdio};
 
 use devbox::config::{find_config, load_config};
 use devbox::error::DevboxError;
+use devbox::process::session::ProcessStatus;
 use devbox::protocol::{Request, Response, read_message, write_message};
 
 fn main() -> ExitCode {
@@ -191,15 +192,23 @@ fn run() -> Result<u8, DevboxError> {
                 }
 
                 if sessions.is_empty() {
-                    println!("No active sessions found.");
+                    println!("No sessions found.");
                 } else {
-                    println!("{:<40} {:<20} {:<10} COMMAND", "ID", "NAME", "PID");
-                    println!("{}", "-".repeat(90));
+                    println!(
+                        "{:<40} {:<20} {:<10} {:<10} COMMAND",
+                        "ID", "NAME", "PID", "STATUS",
+                    );
+                    println!("{}", "-".repeat(100));
 
                     for session in sessions {
+                        let status = match session.status {
+                            ProcessStatus::Running => "Running",
+                            ProcessStatus::Exited => "Exited",
+                        };
+
                         println!(
-                            "{:<40} {:<20} {:<10} {}",
-                            session.id, session.name, session.pid, session.command
+                            "{:<40} {:<20} {:<10} {:<10} {}",
+                            session.id, session.name, session.pid, status, session.command
                         );
                     }
                 }
