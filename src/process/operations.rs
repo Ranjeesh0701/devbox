@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::{fs, io, mem};
-use uuid::Uuid;
+use std::{fs, io};
 
+use super::platform;
 use super::session::{ProcessSession, ProcessStatus};
 use crate::error::DevboxError;
 use crate::storage::get_log_file;
+use uuid::Uuid;
 
 pub fn start_process(
     name: String,
@@ -17,11 +18,13 @@ pub fn start_process(
     project_dir: Option<PathBuf>,
 ) -> Result<(Child, ProcessSession), DevboxError> {
     let id = Uuid::new_v4().to_string();
+
     let file = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(get_log_file(&id)?)
         .map_err(DevboxError::FileOperation)?;
+
     let stdout_file = file.try_clone().map_err(DevboxError::FileOperation)?;
 
     let child = Command::new(&program)
@@ -34,104 +37,43 @@ pub fn start_process(
         .map_err(DevboxError::ProcessLaunch)?;
 
     let pid = child.id();
-    let (start_time_seconds, start_time_useconds) = match get_process_start_time(child.id()) {
-        Ok(val) => val,
-        Err(e) => {
-            let _ = stop_process(child.id());
-            return Err(DevboxError::ProcessCheck(e));
+
+    let (start_time_seconds, start_time_useconds) = match platform::get_process_start_time(pid) {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = platform::stop_process(pid);
+            return Err(DevboxError::ProcessCheck(error));
         }
     };
+
     let session = ProcessSession {
-        id: id,
-        pid: pid,
-        name: name,
+        id,
+        pid,
+        name,
         command: program,
-        start_time_seconds: start_time_seconds,
-        start_time_useconds: start_time_useconds,
+        start_time_seconds,
+        start_time_useconds,
         status: ProcessStatus::Running,
         exit_code: None,
-        project_dir: project_dir,
-        cwd: cwd,
+        project_dir,
+        cwd,
     };
 
     println!("Started {} with PID {}", session.name, session.pid);
+
     Ok((child, session))
 }
 
-pub fn stop_process(pid: u32) -> Result<bool, std::io::Error> {
-    let pid: i32 = pid_to_i32(pid)?;
+pub use platform::stop_process;
 
-    let result = unsafe { libc::kill(pid, libc::SIGTERM) };
-
-    if result == 0 {
-        return Ok(true);
-    }
-
-    let err = std::io::Error::last_os_error();
-    match err.raw_os_error() {
-        Some(libc::ESRCH) => Ok(false),
-        _ => Err(err),
-    }
-}
-
-fn is_process_active(pid: u32) -> Result<bool, std::io::Error> {
-    let pid = pid_to_i32(pid)?;
-
-    let result = unsafe { libc::kill(pid, 0) };
-
-    if result == 0 {
-        return Ok(true);
-    }
-
-    let err = std::io::Error::last_os_error();
-    match err.raw_os_error() {
-        Some(libc::ESRCH) => Ok(false),
-        Some(libc::EPERM) => Ok(true),
-        _ => Err(err),
-    }
-}
-
-fn get_process_start_time(pid: u32) -> Result<(u64, u64), std::io::Error> {
-    let pid = pid_to_i32(pid)?;
-    let mut info: libc::proc_bsdinfo = unsafe { mem::zeroed() };
-    let size = mem::size_of::<libc::proc_bsdinfo>() as i32;
-
-    let result = unsafe {
-        libc::proc_pidinfo(
-            pid,
-            libc::PROC_PIDTBSDINFO,
-            0,
-            &mut info as *mut _ as *mut libc::c_void,
-            size,
-        )
-    };
-
-    if result <= 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if result < size {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "short proc_pidinfo result",
-        ));
-    }
-
-    Ok((info.pbi_start_tvsec, info.pbi_start_tvusec))
-}
-
-pub fn is_same_process(session: &ProcessSession) -> Result<bool, std::io::Error> {
-    if !is_process_active(session.pid)? {
+pub fn is_same_process(session: &ProcessSession) -> Result<bool, io::Error> {
+    if !platform::is_process_active(session.pid)? {
         return Ok(false);
     }
 
     let (current_start_time_seconds, current_start_time_useconds) =
-        get_process_start_time(session.pid)?;
+        platform::get_process_start_time(session.pid)?;
 
     Ok(current_start_time_seconds == session.start_time_seconds
         && current_start_time_useconds == session.start_time_useconds)
-}
-
-pub fn pid_to_i32(pid: u32) -> Result<i32, std::io::Error> {
-    i32::try_from(pid)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "pid out of range"))
 }

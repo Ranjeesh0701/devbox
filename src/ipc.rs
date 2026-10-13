@@ -7,6 +7,12 @@ mod unix;
 #[cfg(unix)]
 pub use unix::{Listener, connect, connect_with_retry, prepare_listener, remove_socket};
 
+#[cfg(windows)]
+mod windows;
+
+#[cfg(windows)]
+pub use windows::{Listener, connect, connect_with_retry, prepare_listener, remove_socket};
+
 pub(super) trait ReadWrite: Read + Write + Send {
     fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
 }
