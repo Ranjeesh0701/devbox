@@ -150,6 +150,14 @@ impl ProcessSupervisor {
         Ok(())
     }
 
+    pub fn is_running(&mut self, id: &str) -> Result<bool, DevboxError> {
+        let sessions = self.list()?;
+
+        Ok(sessions
+            .iter()
+            .any(|session| session.id == id && session.status == ProcessStatus::Running))
+    }
+
     pub fn start_project(
         &mut self,
         project_dir: &Path,

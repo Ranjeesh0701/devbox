@@ -100,7 +100,15 @@ fn handle_client(
 
         match result {
             Ok(path) => {
-                if let Err(error) = logs(&mut stream, &path, *follow) {
+                if let Err(error) = logs(&mut stream, &path, *follow, || {
+                    let mut supervisor = supervisor
+                        .lock()
+                        .map_err(|_| io::Error::other("Supervisor lock poisoned"))?;
+
+                    supervisor
+                        .is_running(id)
+                        .map_err(|error| io::Error::other(error.to_string()))
+                }) {
                     if error.kind() != io::ErrorKind::BrokenPipe
                         && error.kind() != io::ErrorKind::ConnectionReset
                     {
@@ -185,7 +193,10 @@ fn handle_client(
     Ok(())
 }
 
-fn logs(stream: &mut UnixStream, path: &Path, follow: bool) -> io::Result<()> {
+fn logs<F>(stream: &mut UnixStream, path: &Path, follow: bool, mut is_running: F) -> io::Result<()>
+where
+    F: FnMut() -> io::Result<bool>,
+{
     let mut file = fs::File::open(path)?;
     let mut buffer = [0u8; 4096];
 
@@ -194,9 +205,8 @@ fn logs(stream: &mut UnixStream, path: &Path, follow: bool) -> io::Result<()> {
 
         if bytes_read > 0 {
             let logs = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
-
             write_message(stream, &Response::LogChunk { logs })?;
-        } else if !follow {
+        } else if !follow || !is_running()? {
             break;
         } else {
             thread::sleep(Duration::from_millis(200));
