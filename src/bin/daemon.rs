@@ -1,12 +1,12 @@
 use std::fs;
 use std::io::{self, Read};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use devbox::ipc;
 use devbox::process::supervisor::ProcessSupervisor;
 use devbox::protocol::{Request, Response, read_message, write_message};
 use devbox::storage::ensure_storage_directory;
@@ -21,8 +21,6 @@ fn main() -> io::Result<()> {
     })?));
     let mut client_threads = Vec::new();
 
-    let path = "/tmp/devbox.sock";
-
     let storage_directory = ensure_storage_directory().map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
@@ -35,21 +33,7 @@ fn main() -> io::Result<()> {
         fs::remove_file(&temp_file)?;
     }
 
-    if Path::new(path).exists() {
-        match UnixStream::connect(path) {
-            Ok(_) => {
-                println!("Deamon already running");
-                return Ok(());
-            }
-            Err(error) => {
-                eprintln!("Failed to connect: {error}");
-                fs::remove_file(path)?;
-            }
-        }
-    }
-
-    let listener = UnixListener::bind(path)?;
-    listener.set_nonblocking(true)?;
+    let listener = ipc::prepare_listener()?;
 
     loop {
         if shutdown.load(Ordering::SeqCst) {
@@ -58,7 +42,7 @@ fn main() -> io::Result<()> {
         }
 
         match listener.accept() {
-            Ok((stream, _address)) => {
+            Ok(Some(stream)) => {
                 let supervisor = Arc::clone(&supervisor);
                 let shutdown_signal = Arc::clone(&shutdown);
 
@@ -71,11 +55,11 @@ fn main() -> io::Result<()> {
                 });
                 client_threads.push(handle);
             }
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+            Ok(None) => {
                 thread::sleep(Duration::from_millis(50));
             }
             Err(error) => {
-                eprintln!("Failed to accept connection: {error}")
+                eprintln!("Failed to accept connection: {error}");
             }
         }
     }
@@ -86,12 +70,12 @@ fn main() -> io::Result<()> {
         }
     }
 
-    fs::remove_file(path)?;
+    ipc::remove_socket()?;
     Ok(())
 }
 
 fn handle_client(
-    mut stream: UnixStream,
+    mut stream: ipc::Connection,
     supervisor: Arc<Mutex<ProcessSupervisor>>,
     shutdown: Arc<AtomicBool>,
 ) -> io::Result<()> {
@@ -220,7 +204,7 @@ fn handle_client(
 }
 
 fn logs<F, S>(
-    stream: &mut UnixStream,
+    stream: &mut ipc::Connection,
     path: &Path,
     follow: bool,
     mut is_running: F,

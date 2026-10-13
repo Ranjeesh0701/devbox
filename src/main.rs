@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::env;
 use std::io;
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 
 use devbox::config::{find_config, load_config};
 use devbox::error::DevboxError;
+use devbox::ipc;
+use devbox::ipc::Connection;
 use devbox::process::session::ProcessStatus;
 use devbox::protocol::{Request, Response, read_message, write_message};
 
@@ -171,7 +172,7 @@ fn run() -> Result<u8, DevboxError> {
         }
     };
 
-    let mut stream = connect_to_daemon_with_retry(50, 100)?;
+    let mut stream = connect_or_start(50, 100)?;
 
     write_message(&mut stream, &request).map_err(DevboxError::Ipc)?;
 
@@ -319,8 +320,8 @@ fn get_daemon_path() -> io::Result<PathBuf> {
     Ok(path)
 }
 
-fn connect_to_daemon_with_retry(retries: u32, delay_ms: u64) -> Result<UnixStream, DevboxError> {
-    match UnixStream::connect("/tmp/devbox.sock") {
+fn connect_or_start(retries: u32, delay_ms: u64) -> Result<Connection, DevboxError> {
+    match ipc::connect() {
         Ok(stream) => return Ok(stream),
         Err(_) => {
             Command::new(get_daemon_path().map_err(DevboxError::FileOperation)?)
@@ -332,21 +333,5 @@ fn connect_to_daemon_with_retry(retries: u32, delay_ms: u64) -> Result<UnixStrea
         }
     }
 
-    for attempt in 0..retries {
-        match UnixStream::connect("/tmp/devbox.sock") {
-            Ok(stream) => return Ok(stream),
-            Err(error) => {
-                if attempt + 1 < retries {
-                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-                } else {
-                    return Err(DevboxError::Ipc(error));
-                }
-            }
-        }
-    }
-
-    Err(DevboxError::Ipc(io::Error::new(
-        io::ErrorKind::Other,
-        "Failed to connect to daemon after multiple attempts",
-    )))
+    ipc::connect_with_retry(retries, delay_ms).map_err(DevboxError::Ipc)
 }
