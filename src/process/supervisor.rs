@@ -155,12 +155,41 @@ impl ProcessSupervisor {
         project_dir: &Path,
         services: HashMap<String, ServiceConfig>,
     ) -> Vec<ServiceStartResult> {
+        if let Err(error) = self.list() {
+            return vec![ServiceStartResult {
+                name: "*".to_string(),
+                session: None,
+                error: Some(format!("Failed to refresh process sessions: {error}")),
+            }];
+        }
+
+        // Index running services belonging to this project.
+        let existing_services: HashMap<String, ProcessSession> = self
+            .processes
+            .iter()
+            .filter(|process| {
+                process.session.project_dir.as_deref() == Some(project_dir)
+                    && process.session.status == ProcessStatus::Running
+            })
+            .map(|process| (process.session.name.clone(), process.session.clone()))
+            .collect();
+
         let mut results = Vec::new();
 
         let mut services: Vec<_> = services.into_iter().collect();
         services.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (name, service) in services {
+            // Skip services that are already running.
+            if let Some(session) = existing_services.get(&name) {
+                results.push(ServiceStartResult {
+                    name,
+                    session: Some(session.clone()),
+                    error: None,
+                });
+                continue;
+            }
+
             match self.start(
                 name.clone(),
                 service.command,
