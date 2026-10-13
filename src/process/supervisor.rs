@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 use std::process::Child;
 
 use super::operations::{is_same_process, start_process, stop_process};
@@ -88,8 +90,10 @@ impl ProcessSupervisor {
         name: String,
         program: String,
         args: Vec<String>,
+        cwd: PathBuf,
+        env: HashMap<String, String>,
     ) -> Result<&ProcessSession, DevboxError> {
-        let (child, session) = start_process(name, program, args)?;
+        let (child, session) = start_process(name, program, args, cwd, env)?;
         let session_id = session.id.clone();
         self.processes.push(ManagedProcess {
             child: Some(child),

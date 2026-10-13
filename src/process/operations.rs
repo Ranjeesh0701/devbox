@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::{fs, io, mem};
 use uuid::Uuid;
@@ -10,6 +12,8 @@ pub fn start_process(
     name: String,
     program: String,
     args: Vec<String>,
+    cwd: PathBuf,
+    env: HashMap<String, String>,
 ) -> Result<(Child, ProcessSession), DevboxError> {
     let id = Uuid::new_v4().to_string();
     let file = fs::OpenOptions::new()
@@ -21,6 +25,8 @@ pub fn start_process(
 
     let child = Command::new(&program)
         .args(args)
+        .current_dir(cwd)
+        .envs(env)
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(file))
         .spawn()

@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::env;
 use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 
+use devbox::config::{find_config, load_config};
 use devbox::error::DevboxError;
 use devbox::protocol::{Request, Response, read_message, write_message};
 
@@ -38,6 +40,9 @@ fn run() -> Result<u8, DevboxError> {
         println!("  stop <session_id>                 - Stop a process.");
         println!("  logs <session_id>                 - Show logs for a session.");
         println!("  shutdown                          - Shutdown the daemon.");
+        println!(
+            "  up                                - Start all enabled services from devbox.yaml."
+        );
         return Ok(0);
     }
 
@@ -59,6 +64,8 @@ fn run() -> Result<u8, DevboxError> {
                 name,
                 program,
                 args: args.collect(),
+                cwd: env::current_dir().map_err(DevboxError::FileOperation)?,
+                env: HashMap::new(),
             }
         }
         "list" => {
@@ -113,9 +120,26 @@ fn run() -> Result<u8, DevboxError> {
 
             Request::Shutdown
         }
+        "up" => {
+            if args.next().is_some() {
+                return Err(DevboxError::InvalidArguments(
+                    "No arguments expected for 'up'. Usage: up".to_string(),
+                ));
+            }
+
+            let path = find_config().map_err(DevboxError::ConfigNotFound)?;
+            let config = load_config(&path).map_err(|_| DevboxError::InvalidResponse)?;
+
+            Request::Up {
+                services: config
+                    .enabled_services()
+                    .map(|(name, service)| (name.clone(), service.clone()))
+                    .collect(),
+            }
+        }
         _ => {
             return Err(DevboxError::InvalidArguments(format!(
-                "Invalid action: {action}. Supported actions: start, list, stop, logs, shutdown."
+                "Invalid action: {action}. Supported actions: start, list, stop, logs, shutdown, up."
             )));
         }
     };
@@ -186,6 +210,31 @@ fn run() -> Result<u8, DevboxError> {
                     return Err(DevboxError::InvalidResponse);
                 }
                 println!("Daemon shutdown successfully.");
+                break;
+            }
+            Response::Up { results } => {
+                if !matches!(request, Request::Up { .. }) {
+                    return Err(DevboxError::InvalidResponse);
+                }
+
+                let mut failed = false;
+
+                for result in results {
+                    if let Some(session) = result.session {
+                        println!(
+                            "Service '{}' started successfully with session ID: {}",
+                            result.name, session.id
+                        );
+                    } else if let Some(error) = result.error {
+                        failed = true;
+                        eprintln!("Failed to start service '{}': {}", result.name, error);
+                    }
+                }
+
+                if failed {
+                    return Ok(1);
+                }
+
                 break;
             }
             Response::Logs { .. } => {

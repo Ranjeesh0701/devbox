@@ -8,7 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use devbox::process::supervisor::ProcessSupervisor;
-use devbox::protocol::{Request, Response, read_message, write_message};
+use devbox::protocol::{Request, Response, ServiceStartResult, read_message, write_message};
 use devbox::storage::ensure_storage_directory;
 
 fn main() -> io::Result<()> {
@@ -134,7 +134,9 @@ fn handle_client(
                 name,
                 program,
                 args,
-            } => match supervisor.start(name, program, args) {
+                cwd,
+                env,
+            } => match supervisor.start(name, program, args, cwd, env) {
                 Ok(session) => Response::Start {
                     session: session.clone(),
                 },
@@ -158,6 +160,39 @@ fn handle_client(
             Request::Shutdown => {
                 println!("Shutting down daemon");
                 Response::Shutdown
+            }
+            Request::Up { services } => {
+                let mut results = Vec::new();
+
+                let mut services: Vec<_> = services.into_iter().collect();
+                services.sort_by(|a, b| a.0.cmp(&b.0));
+
+                for (name, service) in services {
+                    match supervisor.start(
+                        name.clone(),
+                        service.command,
+                        service.args,
+                        service.cwd,
+                        service.env,
+                    ) {
+                        Ok(session) => {
+                            results.push(ServiceStartResult {
+                                name,
+                                session: Some(session.clone()),
+                                error: None,
+                            });
+                        }
+                        Err(error) => {
+                            results.push(ServiceStartResult {
+                                name,
+                                session: None,
+                                error: Some(error.to_string()),
+                            });
+                        }
+                    }
+                }
+
+                Response::Up { results }
             }
         },
     };

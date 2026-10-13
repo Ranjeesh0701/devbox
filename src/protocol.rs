@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
 
+use super::config::ServiceConfig;
 use super::process::session::ProcessSession;
 
 const MAX_MESSAGE_LEN: usize = 1024 * 1024; // 1 MB
@@ -11,6 +14,8 @@ pub enum Request {
         name: String,
         program: String,
         args: Vec<String>,
+        cwd: PathBuf,
+        env: HashMap<String, String>,
     },
     List,
     Stop {
@@ -21,6 +26,9 @@ pub enum Request {
         follow: bool,
     },
     Shutdown,
+    Up {
+        services: HashMap<String, ServiceConfig>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -33,6 +41,14 @@ pub enum Response {
     LogStreamEnd,
     Shutdown,
     Error { message: String },
+    Up { results: Vec<ServiceStartResult> },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServiceStartResult {
+    pub name: String,
+    pub session: Option<ProcessSession>,
+    pub error: Option<String>,
 }
 
 pub fn write_message<W: Write, T: Serialize>(writer: &mut W, message: &T) -> io::Result<()> {

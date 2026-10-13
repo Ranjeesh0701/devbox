@@ -12,6 +12,7 @@ pub enum DevboxError {
     InvalidResponse,
     Json(serde_json::Error),
     StorageDirectoryUnavailable,
+    ConfigNotFound(std::io::Error),
     ExitCodeUnavailable,
     ExitCodeOutOfRange(i32),
 }
@@ -54,6 +55,9 @@ impl fmt::Display for DevboxError {
             }
             DevboxError::DaemonError(message) => {
                 write!(f, "Daemon error: {message}")
+            }
+            DevboxError::ConfigNotFound(error) => {
+                write!(f, "Config not found: {error}")
             }
         }
     }
