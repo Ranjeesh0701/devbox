@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Child;
 
 use super::operations::{is_same_process, start_process, stop_process};
 use super::session::{ProcessSession, ProcessStatus};
+use crate::config::ServiceConfig;
 use crate::error::DevboxError;
+use crate::protocol::{ServiceStartResult, ServiceStopResult};
 use crate::storage::{get_log_file, get_sessions, save_sessions};
 
 struct ManagedProcess {
@@ -92,8 +94,9 @@ impl ProcessSupervisor {
         args: Vec<String>,
         cwd: PathBuf,
         env: HashMap<String, String>,
+        project_dir: Option<PathBuf>,
     ) -> Result<&ProcessSession, DevboxError> {
-        let (child, session) = start_process(name, program, args, cwd, env)?;
+        let (child, session) = start_process(name, program, args, cwd, env, project_dir)?;
         let session_id = session.id.clone();
         self.processes.push(ManagedProcess {
             child: Some(child),
@@ -145,6 +148,74 @@ impl ProcessSupervisor {
         self.save_sessions()?;
 
         Ok(())
+    }
+
+    pub fn start_project(
+        &mut self,
+        project_dir: &Path,
+        services: HashMap<String, ServiceConfig>,
+    ) -> Vec<ServiceStartResult> {
+        let mut results = Vec::new();
+
+        let mut services: Vec<_> = services.into_iter().collect();
+        services.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (name, service) in services {
+            match self.start(
+                name.clone(),
+                service.command,
+                service.args,
+                service.cwd,
+                service.env,
+                Some(project_dir.to_path_buf()),
+            ) {
+                Ok(session) => {
+                    results.push(ServiceStartResult {
+                        name,
+                        session: Some(session.clone()),
+                        error: None,
+                    });
+                }
+                Err(error) => {
+                    results.push(ServiceStartResult {
+                        name,
+                        session: None,
+                        error: Some(error.to_string()),
+                    });
+                }
+            }
+        }
+
+        results
+    }
+
+    pub fn stop_project(
+        &mut self,
+        project_dir: &Path,
+    ) -> Result<Vec<ServiceStopResult>, DevboxError> {
+        let sessions = self.list()?;
+
+        let filtered_sessions: Vec<_> = sessions
+            .into_iter()
+            .filter(|session| session.project_dir.as_deref() == Some(project_dir))
+            .collect();
+
+        let mut results = Vec::new();
+
+        for session in filtered_sessions {
+            match self.stop(&session.id) {
+                Ok(()) => results.push(ServiceStopResult {
+                    name: session.name,
+                    error: None,
+                }),
+                Err(error) => results.push(ServiceStopResult {
+                    name: session.name,
+                    error: Some(error.to_string()),
+                }),
+            }
+        }
+
+        Ok(results)
     }
 
     pub fn log_file(&self, id: &str) -> Result<std::path::PathBuf, DevboxError> {

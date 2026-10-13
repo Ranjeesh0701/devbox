@@ -127,15 +127,41 @@ fn run() -> Result<u8, DevboxError> {
                 ));
             }
 
-            let path = find_config().map_err(DevboxError::ConfigNotFound)?;
+            let path = find_config()
+                .map_err(DevboxError::ConfigNotFound)?
+                .canonicalize()
+                .map_err(DevboxError::FileOperation)?;
             let config = load_config(&path).map_err(|_| DevboxError::InvalidResponse)?;
+            let project_dir = path
+                .parent()
+                .ok_or(DevboxError::InvalidResponse)?
+                .to_path_buf();
 
             Request::Up {
+                project_dir,
                 services: config
                     .enabled_services()
                     .map(|(name, service)| (name.clone(), service.clone()))
                     .collect(),
             }
+        }
+        "down" => {
+            if args.next().is_some() {
+                return Err(DevboxError::InvalidArguments(
+                    "No arguments expected for 'down'. Usage: down".to_string(),
+                ));
+            }
+
+            let path = find_config()
+                .map_err(DevboxError::ConfigNotFound)?
+                .canonicalize()
+                .map_err(DevboxError::FileOperation)?;
+            let project_dir = path
+                .parent()
+                .ok_or(DevboxError::InvalidResponse)?
+                .to_path_buf();
+
+            Request::Down { project_dir }
         }
         _ => {
             return Err(DevboxError::InvalidArguments(format!(
@@ -228,6 +254,33 @@ fn run() -> Result<u8, DevboxError> {
                     } else if let Some(error) = result.error {
                         failed = true;
                         eprintln!("Failed to start service '{}': {}", result.name, error);
+                    }
+                }
+
+                if failed {
+                    return Ok(1);
+                }
+
+                break;
+            }
+            Response::Down { results } => {
+                if !matches!(request, Request::Down { .. }) {
+                    return Err(DevboxError::InvalidResponse);
+                }
+
+                if results.is_empty() {
+                    println!("No running services found for this project.");
+                    break;
+                }
+
+                let mut failed = false;
+
+                for result in results {
+                    if let Some(error) = result.error {
+                        failed = true;
+                        eprintln!("Failed to stop service '{}': {}", result.name, error);
+                    } else {
+                        println!("Service '{}' stopped successfully.", result.name);
                     }
                 }
 

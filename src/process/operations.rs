@@ -14,6 +14,7 @@ pub fn start_process(
     args: Vec<String>,
     cwd: PathBuf,
     env: HashMap<String, String>,
+    project_dir: Option<PathBuf>,
 ) -> Result<(Child, ProcessSession), DevboxError> {
     let id = Uuid::new_v4().to_string();
     let file = fs::OpenOptions::new()
@@ -25,7 +26,7 @@ pub fn start_process(
 
     let child = Command::new(&program)
         .args(args)
-        .current_dir(cwd)
+        .current_dir(&cwd)
         .envs(env)
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(file))
@@ -33,9 +34,12 @@ pub fn start_process(
         .map_err(DevboxError::ProcessLaunch)?;
 
     let pid = child.id();
-    let (start_time_seconds, start_time_useconds) = match get_process_start_time(pid) {
+    let (start_time_seconds, start_time_useconds) = match get_process_start_time(child.id()) {
         Ok(val) => val,
-        Err(e) => return Err(DevboxError::ProcessCheck(e)),
+        Err(e) => {
+            let _ = stop_process(child.id());
+            return Err(DevboxError::ProcessCheck(e));
+        }
     };
     let session = ProcessSession {
         id: id,
@@ -46,6 +50,8 @@ pub fn start_process(
         start_time_useconds: start_time_useconds,
         status: ProcessStatus::Running,
         exit_code: None,
+        project_dir: project_dir,
+        cwd: cwd,
     };
 
     println!("Started {} with PID {}", session.name, session.pid);

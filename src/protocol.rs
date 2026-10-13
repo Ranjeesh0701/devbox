@@ -27,7 +27,11 @@ pub enum Request {
     },
     Shutdown,
     Up {
+        project_dir: PathBuf,
         services: HashMap<String, ServiceConfig>,
+    },
+    Down {
+        project_dir: PathBuf,
     },
 }
 
@@ -42,12 +46,19 @@ pub enum Response {
     Shutdown,
     Error { message: String },
     Up { results: Vec<ServiceStartResult> },
+    Down { results: Vec<ServiceStopResult> },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServiceStartResult {
     pub name: String,
     pub session: Option<ProcessSession>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServiceStopResult {
+    pub name: String,
     pub error: Option<String>,
 }
 

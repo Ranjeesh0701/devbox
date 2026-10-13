@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -16,10 +17,13 @@ pub struct ProcessSession {
     pub command: String,
     pub start_time_seconds: u64,
     pub start_time_useconds: u64,
+    pub cwd: PathBuf,
 
     #[serde(default)]
     pub status: ProcessStatus,
 
     #[serde(default)]
     pub exit_code: Option<i32>,
+
+    pub project_dir: Option<PathBuf>,
 }
