@@ -326,7 +326,7 @@ fn connect_to_daemon_with_retry(retries: u32, delay_ms: u64) -> Result<UnixStrea
             Command::new(get_daemon_path().map_err(DevboxError::FileOperation)?)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stderr(Stdio::inherit())
                 .spawn()
                 .map_err(DevboxError::ProcessLaunch)?;
         }
