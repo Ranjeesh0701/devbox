@@ -19,6 +19,7 @@ fn main() -> io::Result<()> {
             format!("Failed to initialize supervisor: {}", e),
         )
     })?));
+    let mut client_threads = Vec::new();
 
     let path = "/tmp/devbox.sock";
 
@@ -63,11 +64,12 @@ fn main() -> io::Result<()> {
 
                 println!("Received a CLI connection");
 
-                thread::spawn(move || {
+                let handle = thread::spawn(move || {
                     if let Err(error) = handle_client(stream, supervisor, shutdown_signal) {
                         eprintln!("Failed to handle client: {error}");
                     }
                 });
+                client_threads.push(handle);
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(50));
@@ -75,6 +77,12 @@ fn main() -> io::Result<()> {
             Err(error) => {
                 eprintln!("Failed to accept connection: {error}")
             }
+        }
+    }
+
+    for handle in client_threads {
+        if let Err(error) = handle.join() {
+            eprintln!("Failed to join client thread: {error:?}");
         }
     }
 
@@ -87,7 +95,19 @@ fn handle_client(
     supervisor: Arc<Mutex<ProcessSupervisor>>,
     shutdown: Arc<AtomicBool>,
 ) -> io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let request: Request = read_message(&mut stream)?;
+    stream.set_read_timeout(None)?;
+
+    if shutdown.load(Ordering::SeqCst) {
+        write_message(
+            &mut stream,
+            &Response::Error {
+                message: "Daemon is shutting down".to_string(),
+            },
+        )?;
+        return Ok(());
+    }
 
     if let Request::Logs { id, follow } = &request {
         let result = {
@@ -100,15 +120,21 @@ fn handle_client(
 
         match result {
             Ok(path) => {
-                if let Err(error) = logs(&mut stream, &path, *follow, || {
-                    let mut supervisor = supervisor
-                        .lock()
-                        .map_err(|_| io::Error::other("Supervisor lock poisoned"))?;
+                if let Err(error) = logs(
+                    &mut stream,
+                    &path,
+                    *follow,
+                    || {
+                        let mut supervisor = supervisor
+                            .lock()
+                            .map_err(|_| io::Error::other("Supervisor lock poisoned"))?;
 
-                    supervisor
-                        .is_running(id)
-                        .map_err(|error| io::Error::other(error.to_string()))
-                }) {
+                        supervisor
+                            .is_running(id)
+                            .map_err(|error| io::Error::other(error.to_string()))
+                    },
+                    || shutdown.load(Ordering::SeqCst),
+                ) {
                     if error.kind() != io::ErrorKind::BrokenPipe
                         && error.kind() != io::ErrorKind::ConnectionReset
                     {
@@ -193,9 +219,16 @@ fn handle_client(
     Ok(())
 }
 
-fn logs<F>(stream: &mut UnixStream, path: &Path, follow: bool, mut is_running: F) -> io::Result<()>
+fn logs<F, S>(
+    stream: &mut UnixStream,
+    path: &Path,
+    follow: bool,
+    mut is_running: F,
+    mut should_shutdown: S,
+) -> io::Result<()>
 where
     F: FnMut() -> io::Result<bool>,
+    S: FnMut() -> bool,
 {
     let mut file = fs::File::open(path)?;
     let mut buffer = [0u8; 4096];
@@ -206,7 +239,7 @@ where
         if bytes_read > 0 {
             let logs = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
             write_message(stream, &Response::LogChunk { logs })?;
-        } else if !follow || !is_running()? {
+        } else if !follow || !is_running()? || should_shutdown() {
             break;
         } else {
             thread::sleep(Duration::from_millis(200));
