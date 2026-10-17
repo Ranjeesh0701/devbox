@@ -1,3 +1,5 @@
+mod tui;
+
 use std::collections::HashMap;
 use std::env;
 use std::io;
@@ -8,7 +10,7 @@ use devbox::config::{find_config, load_config};
 use devbox::error::DevboxError;
 use devbox::ipc;
 use devbox::ipc::Connection;
-use devbox::process::session::ProcessStatus;
+use devbox::process::session::{ProcessSession, ProcessStatus};
 use devbox::protocol::{Request, Response, read_message, write_message};
 
 fn main() -> ExitCode {
@@ -139,12 +141,45 @@ fn run() -> Result<u8, DevboxError> {
                 .ok_or(DevboxError::InvalidResponse)?
                 .to_path_buf();
 
-            Request::Up {
-                project_dir,
+            // Connect to daemon and send Up request
+            let mut stream = connect_or_start(50, 100)?;
+            let request = Request::Up {
+                project_dir: project_dir.clone(),
                 services: config
                     .enabled_services()
                     .map(|(name, service)| (name.clone(), service.clone()))
                     .collect(),
+            };
+
+            write_message(&mut stream, &request).map_err(DevboxError::Ipc)?;
+            let response = read_message::<_, Response>(&mut stream).map_err(DevboxError::Ipc)?;
+
+            // Check if services started successfully
+            match response {
+                Response::Up { results } => {
+                    let mut failed = false;
+                    for result in &results {
+                        if let Some(error) = &result.error {
+                            failed = true;
+                            eprintln!("Failed to start service '{}': {}", result.name, error);
+                        }
+                    }
+
+                    if failed {
+                        return Ok(1);
+                    }
+
+                    // Services started successfully, launch TUI
+                    drop(stream);
+                    tui::run(fetch_sessions).map_err(DevboxError::Tui)?;
+                    return Ok(0);
+                }
+                Response::Error { message } => {
+                    return Err(DevboxError::DaemonError(message));
+                }
+                _ => {
+                    return Err(DevboxError::InvalidResponse);
+                }
             }
         }
         "down" => {
@@ -334,4 +369,21 @@ fn connect_or_start(retries: u32, delay_ms: u64) -> Result<Connection, DevboxErr
     }
 
     ipc::connect_with_retry(retries, delay_ms).map_err(DevboxError::Ipc)
+}
+
+fn fetch_sessions() -> Result<Vec<ProcessSession>, String> {
+    let mut stream =
+        ipc::connect().map_err(|error| format!("Daemon connection failed: {error}"))?;
+
+    write_message(&mut stream, &Request::List)
+        .map_err(|error| format!("Failed to send list request: {error}"))?;
+
+    let response: Response = read_message(&mut stream)
+        .map_err(|error| format!("Failed to read daemon response: {error}"))?;
+
+    match response {
+        Response::List { sessions } => Ok(sessions),
+        Response::Error { message } => Err(message),
+        _ => Err("Unexpected response from daemon".to_string()),
+    }
 }
