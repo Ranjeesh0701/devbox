@@ -10,7 +10,9 @@ use std::path::PathBuf;
 pub struct ServiceConfig {
     pub enabled: bool,
     pub command: String,
+    #[serde(default)]
     pub args: Vec<String>,
+    #[serde(alias = "working_dir")]
     pub cwd: PathBuf,
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -18,6 +20,7 @@ pub struct ServiceConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct DevboxConfig {
+    #[serde(default)]
     pub version: u32,
     pub services: HashMap<String, ServiceConfig>,
 }

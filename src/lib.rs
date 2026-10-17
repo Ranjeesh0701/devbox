@@ -3,6 +3,7 @@ pub mod error;
 pub mod ipc;
 pub mod process;
 pub mod protocol;
+pub mod service_log_view;
 pub mod storage;
 pub mod terminal;
 pub mod workspace;

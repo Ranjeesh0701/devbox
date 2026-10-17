@@ -15,8 +15,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Tabs},
 };
 
-use devbox::process::session::ProcessSession;
-use devbox::workspace::{TerminalPane, Workspace};
+use devbox::process::session::{ProcessSession, ProcessStatus};
+use devbox::service_log_view::ServiceLogView;
+use devbox::storage;
+use devbox::workspace::TerminalPane;
 
 pub fn run<F>(mut fetch_sessions: F) -> Result<(), Box<dyn std::error::Error>>
 where
@@ -49,38 +51,76 @@ fn run_app<F>(
 where
     F: FnMut() -> Result<Vec<ProcessSession>, String>,
 {
-    let mut workspace = Workspace::new();
-    let mut sessions = Vec::new();
+    let mut service_views: Vec<ServiceLogView> = Vec::new();
+    let mut shell_tabs: Vec<TerminalPane> = Vec::new();
+    let mut active_tab: usize = 0;
     let mut error_message: Option<String> = None;
     let mut last_refresh = Instant::now() - Duration::from_secs(1);
 
-    // Create initial tabs from running sessions or start a default shell
+    // Initial load of services
     match fetch_sessions() {
-        Ok(initial_sessions) if !initial_sessions.is_empty() => {
-            sessions = initial_sessions;
-            // TODO: Create tabs for each session
+        Ok(sessions) => {
+            for session in sessions {
+                match storage::get_log_file(&session.id) {
+                    Ok(log_path) => {
+                        match ServiceLogView::new(session.clone(), log_path) {
+                            Ok(view) => service_views.push(view),
+                            Err(e) => {
+                                eprintln!("Failed to create log view for {}: {}", session.name, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to get log path for {}: {}", session.name, e);
+                    }
+                }
+            }
+
+            if service_views.is_empty() {
+                error_message = Some("No services running. Start services first.".to_string());
+            }
         }
-        _ => {
-            // Start a default shell if no sessions exist
-            let (program, args) = devbox::terminal::default_shell();
-            let pane = TerminalPane::new(
-                "Shell".to_string(),
-                program,
-                &args,
-                std::env::current_dir()?,
-                24,
-                80,
-            )?;
-            workspace.add_tab("Shell".to_string(), pane);
+        Err(e) => {
+            error_message = Some(format!("Failed to fetch sessions: {}", e));
         }
     }
 
     loop {
-        // Refresh session list periodically
-        if last_refresh.elapsed() >= Duration::from_secs(1) {
+        // Refresh session list and update logs periodically
+        if last_refresh.elapsed() >= Duration::from_millis(500) {
             match fetch_sessions() {
-                Ok(updated_sessions) => {
-                    sessions = updated_sessions;
+                Ok(sessions) => {
+                    // Update existing service views
+                    for view in &mut service_views {
+                        if let Err(e) = view.update() {
+                            eprintln!("Failed to update log for {}: {}", view.name(), e);
+                        }
+
+                        // Update session status
+                        if let Some(updated_session) = sessions.iter().find(|s| s.id == view.session.id) {
+                            view.session = updated_session.clone();
+                        }
+                    }
+
+                    // Add new services that appeared
+                    for session in sessions {
+                        if !service_views.iter().any(|v| v.session.id == session.id) {
+                            match storage::get_log_file(&session.id) {
+                                Ok(log_path) => {
+                                    match ServiceLogView::new(session.clone(), log_path) {
+                                        Ok(view) => service_views.push(view),
+                                        Err(e) => {
+                                            eprintln!("Failed to create log view for {}: {}", session.name, e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to get log path for {}: {}", session.name, e);
+                                }
+                            }
+                        }
+                    }
+
                     error_message = None;
                 }
                 Err(error) => {
@@ -91,28 +131,40 @@ where
             last_refresh = Instant::now();
         }
 
-        // Update all terminal outputs
-        workspace.update_all();
+        // Update shell tabs if any
+        for shell in &mut shell_tabs {
+            shell.update();
+        }
 
         // Render UI
         terminal.draw(|frame| {
             let areas = Layout::vertical([
                 Constraint::Length(3), // Tab bar
-                Constraint::Min(0),     // Terminal content
+                Constraint::Min(0),     // Content
                 Constraint::Length(2),  // Footer
             ])
             .split(frame.area());
 
-            // Render tab bar
-            let tab_titles: Vec<String> = workspace
-                .tabs
+            // Build tab titles
+            let mut tab_titles: Vec<String> = service_views
                 .iter()
-                .map(|tab| tab.name.clone())
+                .map(|view| {
+                    let status_icon = match view.status() {
+                        ProcessStatus::Running => "●",
+                        ProcessStatus::Exited => "○",
+                    };
+                    format!("{} {}", status_icon, view.name())
+                })
                 .collect();
+
+            // Add shell tabs
+            for shell in shell_tabs.iter() {
+                tab_titles.push(format!("🐚 {}", shell.name));
+            }
 
             let tabs = Tabs::new(tab_titles)
                 .block(Block::default().title(" Devbox Workspace ").borders(Borders::ALL))
-                .select(workspace.active_tab)
+                .select(active_tab)
                 .style(Style::default().fg(Color::White))
                 .highlight_style(
                     Style::default()
@@ -122,13 +174,33 @@ where
 
             frame.render_widget(tabs, areas[0]);
 
-            // Render current tab's terminal content
-            if let Some(tab) = workspace.current_tab() {
-                if let Some(pane) = tab.panes.first() {
-                    let terminal_text = pane.screen_contents();
+            // Render current tab's content
+            let total_tabs = service_views.len() + shell_tabs.len();
+            if active_tab < service_views.len() {
+                // Service log view
+                let view = &service_views[active_tab];
+                let content = view.content();
+
+                let status_text = match view.status() {
+                    ProcessStatus::Running => "Running",
+                    ProcessStatus::Exited => "Exited",
+                };
+
+                let content_pane = Paragraph::new(content).block(
+                    Block::default()
+                        .title(format!(" {} - {} ", view.name(), status_text))
+                        .borders(Borders::ALL),
+                );
+
+                frame.render_widget(content_pane, areas[1]);
+            } else if active_tab < total_tabs {
+                // Shell tab
+                let shell_index = active_tab - service_views.len();
+                if let Some(shell) = shell_tabs.get(shell_index) {
+                    let terminal_text = shell.screen_contents();
                     let terminal_pane = Paragraph::new(terminal_text).block(
                         Block::default()
-                            .title(format!(" {} ", pane.name))
+                            .title(format!(" {} ", shell.name))
                             .borders(Borders::ALL),
                     );
 
@@ -143,14 +215,11 @@ where
                     Span::raw(error),
                 ])],
                 None => vec![Line::from(vec![
-                    Span::raw("Tab/Shift+Tab: Switch tabs • "),
-                    Span::raw("Ctrl+T: New tab • "),
+                    Span::raw("Tab/Shift+Tab: Switch • "),
+                    Span::raw("Ctrl+T: New shell • "),
                     Span::raw("Ctrl+W: Close tab • "),
-                    Span::raw("q: Quit • "),
-                    Span::styled(
-                        format!("{} sessions", sessions.len()),
-                        Style::default().fg(Color::Green),
-                    ),
+                    Span::raw("Ctrl+R: Refresh • "),
+                    Span::raw("q: Quit"),
                 ])],
             };
 
@@ -161,58 +230,84 @@ where
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == event::KeyEventKind::Press {
-                    // Handle global shortcuts
+                    let total_tabs = service_views.len() + shell_tabs.len();
+
                     match (key.code, key.modifiers) {
                         // Quit
                         (KeyCode::Char('q'), KeyModifiers::NONE) => break,
 
                         // Tab navigation
                         (KeyCode::Tab, KeyModifiers::NONE) => {
-                            workspace.next_tab();
+                            if total_tabs > 0 {
+                                active_tab = (active_tab + 1) % total_tabs;
+                            }
                             continue;
                         }
                         (KeyCode::BackTab, _) => {
-                            workspace.prev_tab();
+                            if total_tabs > 0 {
+                                active_tab = if active_tab == 0 {
+                                    total_tabs - 1
+                                } else {
+                                    active_tab - 1
+                                };
+                            }
                             continue;
                         }
 
-                        // New tab (Ctrl+T)
+                        // New shell tab (Ctrl+T)
                         (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
                             let (program, args) = devbox::terminal::default_shell();
-                            let tab_number = workspace.tabs.len() + 1;
-                            let pane = TerminalPane::new(
-                                format!("Shell {}", tab_number),
+                            let shell_number = shell_tabs.len() + 1;
+                            match TerminalPane::new(
+                                format!("Shell {}", shell_number),
                                 program,
                                 &args,
                                 std::env::current_dir()?,
                                 24,
                                 80,
-                            )?;
-                            workspace.add_tab(format!("Shell {}", tab_number), pane);
-                            workspace.active_tab = workspace.tabs.len() - 1;
+                            ) {
+                                Ok(pane) => {
+                                    shell_tabs.push(pane);
+                                    active_tab = service_views.len() + shell_tabs.len() - 1;
+                                }
+                                Err(e) => {
+                                    error_message = Some(format!("Failed to create shell: {}", e));
+                                }
+                            }
                             continue;
                         }
 
-                        // Close tab (Ctrl+W)
+                        // Close tab (Ctrl+W) - only for shells
                         (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
-                            workspace.close_current_tab();
-                            if workspace.tabs.is_empty() {
-                                break; // Exit if no tabs left
+                            if active_tab >= service_views.len() {
+                                let shell_index = active_tab - service_views.len();
+                                if shell_index < shell_tabs.len() {
+                                    shell_tabs.remove(shell_index);
+                                    if active_tab > 0 {
+                                        active_tab -= 1;
+                                    }
+                                }
                             }
+                            continue;
+                        }
+
+                        // Force refresh (Ctrl+R)
+                        (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                            last_refresh = Instant::now() - Duration::from_secs(1);
                             continue;
                         }
 
                         _ => {}
                     }
 
-                    // Send input to the focused terminal pane
-                    if let Some(tab) = workspace.current_tab_mut() {
-                        if let Some(pane) = tab.focused_pane_mut() {
+                    // Send input to shell tabs only
+                    if active_tab >= service_views.len() {
+                        let shell_index = active_tab - service_views.len();
+                        if let Some(shell) = shell_tabs.get_mut(shell_index) {
                             let input: Option<Vec<u8>> = match key.code {
                                 KeyCode::Char(character) => {
                                     if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                        // Already handled above
-                                        None
+                                        None // Already handled above
                                     } else {
                                         Some(character.to_string().into_bytes())
                                     }
@@ -228,7 +323,7 @@ where
                             };
 
                             if let Some(input) = input {
-                                pane.send_input(&input)?;
+                                let _ = shell.send_input(&input);
                             }
                         }
                     }

@@ -177,7 +177,8 @@ fn run() -> Result<u8, DevboxError> {
                 Response::Error { message } => {
                     return Err(DevboxError::DaemonError(message));
                 }
-                _ => {
+                other => {
+                    eprintln!("DEBUG: Received unexpected response: {:?}", other);
                     return Err(DevboxError::InvalidResponse);
                 }
             }
