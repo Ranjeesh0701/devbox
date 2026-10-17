@@ -13,6 +13,7 @@ pub enum DevboxError {
     Json(serde_json::Error),
     StorageDirectoryUnavailable,
     ConfigNotFound(std::io::Error),
+    Tui(Box<dyn std::error::Error>),
     ExitCodeUnavailable,
     ExitCodeOutOfRange(i32),
 }
@@ -58,6 +59,9 @@ impl fmt::Display for DevboxError {
             }
             DevboxError::ConfigNotFound(error) => {
                 write!(f, "Config not found: {error}")
+            }
+            DevboxError::Tui(error) => {
+                write!(f, "TUI error: {error}")
             }
         }
     }

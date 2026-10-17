@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 
 use devbox_core::process::session::ProcessSession;
 use devbox_core::protocol::{Request, Response, read_message, write_message};
@@ -26,6 +28,8 @@ fn start_session(
     name: String,
     program: String,
     args: Vec<String>,
+    cwd: PathBuf,
+    env: HashMap<String, String>,
 ) -> Result<ProcessSession, String> {
     let name = name.trim();
     let program = program.trim();
@@ -42,6 +46,8 @@ fn start_session(
         name: name.to_string(),
         program: program.to_string(),
         args,
+        cwd,
+        env,
     };
 
     write_message(&mut stream, &request)
